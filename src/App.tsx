@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import ThumbnailPanel from "./components/Layout/ThumbnailPanel";
 import PreviewPanel from "./components/Layout/PreviewPanel";
@@ -20,7 +20,28 @@ export interface Frame {
   fileName: string;
   format: string;
   tags: ExifTags | null; // 선택 시 채워짐
+  pendingCommon: Partial<RollCommon>; // 이 컷에 적용된 롤 공통값(메모리)
+  commonApplied: boolean; // "공통 적용됨" 배지용
 }
+
+/** 롤 공통 정보 — 한 통 전체에 동일 (적용은 단계 6) */
+export interface RollCommon {
+  make: string;
+  model: string;
+  lensMake: string;
+  lensModel: string;
+  filmStock: string;
+  devLab: string;
+}
+
+const EMPTY_ROLL: RollCommon = {
+  make: "",
+  model: "",
+  lensMake: "",
+  lensModel: "",
+  filmStock: "",
+  devLab: "",
+};
 
 function App() {
   const [frames, setFrames] = useState<Frame[]>([]);
@@ -35,6 +56,73 @@ function App() {
   const [dateInput, setDateInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
+
+  // 롤 공통 입력 + 적용(메모리 전용 — 디스크는 안 건드림)
+  const [rollCommon, setRollCommon] = useState<RollCommon>(EMPTY_ROLL);
+  const onRollChange = (patch: Partial<RollCommon>) =>
+    setRollCommon((prev) => ({ ...prev, ...patch }));
+  const [history, setHistory] = useState<Record<string, string[]>>({});
+  const [applyInfo, setApplyInfo] = useState<string | null>(null);
+
+  // 빈 칸을 뺀 패치 (빈 값은 덮어쓰지 않음)
+  function nonEmptyPatch(): Partial<RollCommon> {
+    const patch: Partial<RollCommon> = {};
+    (Object.keys(rollCommon) as (keyof RollCommon)[]).forEach((k) => {
+      const v = rollCommon[k].trim();
+      if (v) patch[k] = v;
+    });
+    return patch;
+  }
+
+  function handleApplyCommon() {
+    const patch = nonEmptyPatch();
+    if (Object.keys(patch).length === 0 || frames.length === 0) return;
+    setFrames((prev) =>
+      prev.map((f) => ({
+        ...f,
+        pendingCommon: { ...f.pendingCommon, ...patch },
+        commonApplied: true,
+      }))
+    );
+    setHistory((prev) => {
+      const next = { ...prev };
+      (Object.keys(patch) as (keyof RollCommon)[]).forEach((k) => {
+        const set = new Set(next[k] ?? []);
+        set.add(patch[k] as string);
+        next[k] = Array.from(set);
+      });
+      return next;
+    });
+    setApplyInfo(`${frames.length}장에 공통 정보 적용됨 · 저장 전이라 파일은 아직 안 바뀜`);
+  }
+
+  // 자동완성 후보: 과거 적용값 + 불러온 사진들의 기존 EXIF
+  const suggestions = useMemo(() => {
+    const tagOf: Record<keyof RollCommon, string | null> = {
+      make: "Make",
+      model: "Model",
+      lensMake: "LensMake",
+      lensModel: "LensModel",
+      filmStock: null,
+      devLab: null,
+    };
+    const out = {} as Record<keyof RollCommon, string[]>;
+    (Object.keys(tagOf) as (keyof RollCommon)[]).forEach((field) => {
+      const set = new Set<string>(history[field] ?? []);
+      const tk = tagOf[field];
+      if (tk) {
+        for (const f of frames) {
+          const v = f.tags?.[tk];
+          if (typeof v === "string" && v.trim()) set.add(v.trim());
+        }
+      }
+      out[field] = Array.from(set).slice(0, 20);
+    });
+    return out;
+  }, [frames, history]);
+
+  const applyDisabled =
+    frames.length === 0 || Object.keys(nonEmptyPatch()).length === 0;
 
   // 비동기 콜백에서 최신값을 읽기 위한 ref
   const framesRef = useRef<Frame[]>([]);
@@ -99,7 +187,7 @@ function App() {
         const existing = new Set(prev.map((f) => f.path));
         const added: Frame[] = res.frames
           .filter((f) => !existing.has(f.path))
-          .map((f) => ({ ...f, tags: null }));
+          .map((f) => ({ ...f, tags: null, pendingCommon: {}, commonApplied: false }));
         const next = [...prev, ...added];
         framesRef.current = next;
         setFrames(next);
@@ -214,6 +302,12 @@ function App() {
         />
         <EditFormPanel
           hasImage={!!currentPath}
+          rollCommon={rollCommon}
+          onRollChange={onRollChange}
+          onApplyCommon={handleApplyCommon}
+          applyDisabled={applyDisabled}
+          applyInfo={applyInfo}
+          suggestions={suggestions}
           dateInput={dateInput}
           onDateChange={setDateInput}
           onSave={handleSave}

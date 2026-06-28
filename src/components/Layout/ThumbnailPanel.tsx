@@ -3,7 +3,7 @@ import type { Frame } from "../../App";
 
 /**
  * 왼쪽 패널 — 썸네일 그리드 + 다중 선택 (FR-2).
- * 가상 스크롤은 CSS content-visibility로 처리(화면 밖은 렌더 생략 → 수백 장도 부드럽게).
+ * 정사각형 격자 + 이미지 lazy 로딩(화면 밖 이미지는 로드 안 함).
  */
 interface Props {
   frames: Frame[];
@@ -82,8 +82,7 @@ export default function ThumbnailPanel({
                     shiftKey: e.shiftKey,
                   })
                 }
-                style={{ contentVisibility: "auto", containIntrinsicSize: "84px 84px" }}
-                className={`relative aspect-square overflow-hidden rounded border bg-ink ${
+                className={`relative block h-24 w-full overflow-hidden rounded border bg-ink ${
                   isSel ? "border-amber ring-1 ring-amber" : "border-line"
                 } ${isCur ? "outline outline-1 outline-paper" : ""}`}
               >
@@ -102,6 +101,11 @@ export default function ThumbnailPanel({
                 {isSel && (
                   <span className="absolute right-0.5 top-0.5 rounded-full bg-sage px-1 text-label text-ink">
                     ✓
+                  </span>
+                )}
+                {f.commonApplied && (
+                  <span className="absolute bottom-0.5 left-0.5 rounded bg-sage/90 px-1 text-label text-ink">
+                    공통
                   </span>
                 )}
               </button>
