@@ -10,8 +10,9 @@ dist-ssr/
 src-tauri/target/
 src-tauri/gen/
 
-# ExifTool 사이드카 바이너리(용량 큼 — 각자 내려받아 배치)
+# ExifTool 사이드카 바이너리/모듈(용량 큼 — scripts/setup-exiftool.sh 로 각자 생성)
 src-tauri/binaries/exiftool-*
+src-tauri/binaries/lib/
 !src-tauri/binaries/.gitkeep
 
 # 에디터/OS

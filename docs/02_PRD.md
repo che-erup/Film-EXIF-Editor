@@ -116,6 +116,13 @@ EXIF 수정 시 원본을 자동 백업한다.
 ### FR-16 · 필름 데이터베이스 자동완성 — P2
 주요 필름 목록 내장 자동완성.
 
+### FR-17 · 스캐너 메타데이터 정리 — P1
+필름 스캔본에 스캐너/스캔 소프트웨어가 남긴 메타데이터를 **선별 삭제**한다.
+- 삭제 대상(스캐너 출처): `Software`, `ProcessingSoftware`, `HostComputer`, 스캐너 메이커노트(`MakerNotes`), 스캐너 `Make`/`Model`(카메라 정보를 입력하면 FR-4에서 어차피 덮어써짐), 스캐너가 기록한 IPTC/XMP 항목. 별도 `.xmp` 사이드카 파일이 있으면 함께 정리.
+- 보존: 스캔 일시는 지우지 않고 **디지털화 날짜**(`CreateDate`/`DateTimeDigitized`)로 남겨 촬영일(`DateTimeOriginal`)과 구분한다.
+- 안전: 전체 삭제(`-all=`)는 쓰지 않는다(정당한 EXIF 손실·불완전 삭제·사이드카 누락 위험). 선별 목록만 지우고, 저장 전에 "지워질 항목"을 요약해 확인받는다. 삭제도 FR-8 백업·검증 파이프라인을 그대로 통과한다.
+- **AC**: "스캐너 정보 지우기"를 켜고 저장하면 위 스캐너 태그가 제거되고, 촬영일·디지털화 날짜와 사용자가 입력한 카메라·렌즈·필름 정보는 보존된다. 저장 후 다른 뷰어에서 스캐너 흔적이 보이지 않는다.
+
 ---
 
 ## 4. 데이터 모델 — EXIF 필드 매핑
@@ -142,6 +149,8 @@ EXIF 수정 시 원본을 자동 백업한다.
 초점거리 `FocalLength`, 조리개 `FNumber`, 셔터스피드 `ExposureTime`, 감도 `ISOSpeedRatings`/`ExposureIndex`, 위치 `GPSLatitude`/`GPSLongitude`.
 
 > 표준 태그가 없는 필름·현상소는 `UserComment`에 `키: 값; 키: 값` 규칙으로 직렬화하고, 불러올 때 같은 규칙으로 파싱한다.
+>
+> **스캐너 정리(FR-17)**: 위 매핑과 별개로, 스캐너/스캔SW가 남긴 태그(`Software`·`ProcessingSoftware`·`HostComputer`·`MakerNotes`·스캐너 `Make`/`Model` 등)는 선별 삭제 대상이다. 스캔 일시는 디지털화 날짜(`CreateDate`/`DateTimeDigitized`)로 **보존**한다.
 
 ---
 
@@ -195,7 +204,7 @@ EXIF 수정 시 원본을 자동 백업한다.
 | --- | --- | --- |
 | **M0 · 뼈대** | Tauri+React 프로젝트, ExifTool 사이드카 연결 | 사진 1장의 `DateTimeOriginal`을 바꿔 저장 성공 |
 | **M1 · MVP** | FR-1~FR-10 | §2 핵심 시나리오 전체를 앱에서 수행 가능 |
-| **M2 · 편의** | FR-11~FR-14 | 프리셋·롤 세션·Undo·CSV 동작 |
+| **M2 · 편의** | FR-11~FR-14, FR-17 | 프리셋·롤 세션·Undo·CSV·스캐너 정리 동작 |
 | **M3 · 확장** | FR-15~FR-16 | GPS·필름 DB |
 
 ---

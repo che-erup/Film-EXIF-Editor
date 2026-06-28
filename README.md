@@ -6,7 +6,7 @@
 - EXIF 엔진: **ExifTool** 사이드카(`-stay_open` 상주 모드)
 - 설계 문서: `docs/` 폴더 (기획 · PRD · 아키텍처 · 개발착수)
 
-> 현재 상태: **단계 1 완료** — 다크 테마의 빈 3분할 화면 뼈대.
+> 현재 상태: **단계 4 완료 (v0.2.0)** — ExifTool 상주 연결, 1장 안전 저장(달력 입력), 사진 미리보기, 다중 불러오기·썸네일 그리드·다중 선택.
 
 ---
 
@@ -35,12 +35,18 @@ Mac 기준 빌드에 필요한 것:
 # 1) 의존성 설치
 npm install
 
-# 2) 앱 아이콘 생성(최초 1회) — 원본 PNG로부터 각 플랫폼 아이콘 생성
+# 2) ExifTool 사이드카 설치(최초 1회) — binaries/ 에 자동 배치
+bash scripts/setup-exiftool.sh
+
+# 3) (선택) 앱 아이콘 생성 — 이미 생성돼 있으면 건너뜀
 npm run tauri icon src-tauri/app-icon.png
 
-# 3) 개발 모드 실행 (다크 3분할 창이 떠야 함)
+# 4) 개발 모드 실행
 npm run tauri:dev
 ```
+
+> ExifTool은 macOS 기본 Perl(`/usr/bin/perl`)로 동작하므로 별도 설치가 필요 없습니다.
+> 설치 스크립트는 최신 ExifTool을 내려받아 `src-tauri/binaries/`에 둡니다(용량이 커서 git에는 포함하지 않음).
 
 프론트엔드만 빠르게 확인하려면:
 
