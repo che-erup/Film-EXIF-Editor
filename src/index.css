@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    @apply bg-ink text-paper font-sans text-body antialiased;
+    /* 데스크톱 앱: 텍스트 드래그 선택 방지(입력칸 제외) */
+    user-select: none;
+  }
+
+  input,
+  textarea {
+    user-select: text;
+  }
+}

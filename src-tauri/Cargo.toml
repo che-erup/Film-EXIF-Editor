@@ -1,0 +1,27 @@
+[package]
+name = "film-exif-tool"
+version = "0.1.0"
+description = "필름사진 EXIF 수정 툴"
+authors = ["체"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# main.rs와 lib.rs를 함께 쓰는 Tauri v2 표준 구성
+[lib]
+name = "film_exif_tool_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

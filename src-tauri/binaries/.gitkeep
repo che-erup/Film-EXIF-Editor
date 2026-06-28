@@ -1,0 +1,5 @@
+# ExifTool 사이드카 바이너리 위치 (단계 2에서 동봉)
+# 플랫폼별 타깃 접미사를 붙인다. 예:
+#   exiftool-aarch64-apple-darwin       (Apple Silicon Mac)
+#   exiftool-x86_64-apple-darwin        (Intel Mac)
+#   exiftool-x86_64-pc-windows-msvc.exe (Windows)
