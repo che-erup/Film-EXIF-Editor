@@ -23,6 +23,8 @@ const KEY_TAGS = [
   "LensMake",
   "LensModel",
   "Film",
+  "ISO",
+  "ExposureIndex",
   "DevLab",
   "UserComment",
 ];

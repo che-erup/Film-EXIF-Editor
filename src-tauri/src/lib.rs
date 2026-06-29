@@ -26,7 +26,13 @@ pub fn run() {
             commands::load_image,
             commands::save_date,
             commands::save_batch,
-            commands::cancel_save
+            commands::cancel_save,
+            commands::load_presets,
+            commands::save_presets,
+            commands::save_session,
+            commands::load_session,
+            commands::write_text_file,
+            commands::read_text_file
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 애플리케이션 실행 중 오류가 발생했습니다");

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Calendar from "../Calendar";
-import type { SaveResult } from "../../ipc/exif";
+import type { SaveResult, Preset } from "../../ipc/exif";
 import type { RollCommon } from "../../App";
 import { looseNormalize } from "../../lib/dateUtils";
 
@@ -13,6 +13,10 @@ interface Props {
   hasImage: boolean;
   rollCommon: RollCommon;
   onRollChange: (patch: Partial<RollCommon>) => void;
+  presets: Preset[];
+  onApplyPreset: (name: string) => void;
+  onSavePreset: (name: string) => void;
+  onDeletePreset: (name: string) => void;
   onApplyCommon: () => void;
   applyDisabled: boolean;
   applyInfo: string | null;
@@ -25,6 +29,11 @@ interface Props {
   selectedCount: number;
   onApplyDate: (opts: { autoIncrement: boolean; intervalSec: number }) => void;
   applyDateInfo: string | null;
+  gpsLat: string;
+  gpsLon: string;
+  onGpsLatChange: (v: string) => void;
+  onGpsLonChange: (v: string) => void;
+  onApplyGps: () => void;
   backupOriginal: boolean;
   onBackupChange: (v: boolean) => void;
 }
@@ -52,6 +61,10 @@ export default function EditFormPanel({
   hasImage,
   rollCommon,
   onRollChange,
+  presets,
+  onApplyPreset,
+  onSavePreset,
+  onDeletePreset,
   onApplyCommon,
   applyDisabled,
   applyInfo,
@@ -64,6 +77,11 @@ export default function EditFormPanel({
   selectedCount,
   onApplyDate,
   applyDateInfo,
+  gpsLat,
+  gpsLon,
+  onGpsLatChange,
+  onGpsLonChange,
+  onApplyGps,
   backupOriginal,
   onBackupChange,
 }: Props) {
@@ -79,6 +97,8 @@ export default function EditFormPanel({
   const [showCal, setShowCal] = useState(false);
   const [autoInc, setAutoInc] = useState(false);
   const [intervalSec, setIntervalSec] = useState(1);
+  const [presetSel, setPresetSel] = useState("");
+  const [presetName, setPresetName] = useState("");
 
   function onDatePart(v: string) {
     // 달력에서 날짜 선택 → 기존 시간(없으면 12:00:00) 유지하며 합침
@@ -96,6 +116,61 @@ export default function EditFormPanel({
       <section className="rounded-lg border border-line p-3">
         <h2 className="mb-1 text-subtitle font-medium text-paper">롤 공통</h2>
         <p className="mb-3 text-label text-muted">한 통 전체에 동일하게 적용</p>
+
+        {/* 프리셋 (FR-11) */}
+        <div className="mb-3 space-y-1.5">
+          <div className="flex gap-1.5">
+            <select
+              value={presetSel}
+              onChange={(e) => {
+                setPresetSel(e.target.value);
+                if (e.target.value) onApplyPreset(e.target.value);
+              }}
+              style={{ colorScheme: "dark" }}
+              className="min-w-0 flex-1 rounded border border-line bg-ink px-2 py-1.5 text-body text-paper focus:border-amber focus:outline-none"
+            >
+              <option value="">프리셋 선택…</option>
+              {presets.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {presetSel && (
+              <button
+                type="button"
+                onClick={() => {
+                  onDeletePreset(presetSel);
+                  setPresetSel("");
+                }}
+                className="rounded border border-line px-2 py-1.5 text-label text-rust hover:border-rust"
+              >
+                삭제
+              </button>
+            )}
+          </div>
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              placeholder="새 프리셋 이름"
+              className="min-w-0 flex-1 rounded border border-line bg-ink px-2 py-1.5 text-label text-paper placeholder:text-muted focus:border-amber focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                onSavePreset(presetName);
+                setPresetName("");
+              }}
+              disabled={!presetName.trim()}
+              className="rounded border border-line px-2 py-1.5 text-label text-paper hover:border-amber disabled:opacity-40"
+            >
+              현재 값 저장
+            </button>
+          </div>
+        </div>
+
         <div className="space-y-2.5">
           <Field
             label="카메라 제조사"
@@ -131,6 +206,20 @@ export default function EditFormPanel({
             onChange={(v) => onRollChange({ filmStock: v })}
             placeholder="예: Portra 400"
             suggestions={suggestions.filmStock}
+          />
+          <Field
+            label="필름 감도 ISO"
+            value={rollCommon.iso}
+            onChange={(v) => onRollChange({ iso: v })}
+            placeholder="예: 400 (박스 감도)"
+            suggestions={suggestions.iso}
+          />
+          <Field
+            label="노출지수 EI"
+            value={rollCommon.ei}
+            onChange={(v) => onRollChange({ ei: v })}
+            placeholder="예: 800 (증감 촬영 시)"
+            suggestions={suggestions.ei}
           />
           <Field
             label="현상소"
@@ -242,6 +331,40 @@ export default function EditFormPanel({
           선택 {selectedCount}장에 적용
         </button>
         {applyDateInfo && <p className="mt-1 text-label text-sage">{applyDateInfo}</p>}
+
+        {/* 촬영 위치 (GPS) — FR-15 */}
+        <div className="mt-3 border-t border-line pt-3">
+          <span className="mb-1 block text-label text-muted">촬영 위치 (GPS)</span>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={gpsLat}
+              onChange={(e) => onGpsLatChange(e.target.value)}
+              disabled={disabled}
+              placeholder="위도 37.5665"
+              className="min-w-0 flex-1 rounded border border-line bg-ink px-2 py-1.5 font-mono text-body text-paper placeholder:text-muted focus:border-amber focus:outline-none disabled:opacity-50"
+            />
+            <input
+              type="text"
+              value={gpsLon}
+              onChange={(e) => onGpsLonChange(e.target.value)}
+              disabled={disabled}
+              placeholder="경도 126.9780"
+              className="min-w-0 flex-1 rounded border border-line bg-ink px-2 py-1.5 font-mono text-body text-paper placeholder:text-muted focus:border-amber focus:outline-none disabled:opacity-50"
+            />
+          </div>
+          <span className="mt-1 block text-label text-muted">
+            소수점 좌표(남위·서경은 -). 예: 37.5665, 126.9780
+          </span>
+          <button
+            type="button"
+            onClick={onApplyGps}
+            disabled={!hasImage || selectedCount === 0}
+            className="mt-2 w-full rounded border border-line px-3 py-2 text-body text-paper hover:border-amber disabled:opacity-40"
+          >
+            선택 {selectedCount}장에 위치 적용
+          </button>
+        </div>
 
         {/* 원본 백업 여부 (저장 버튼 위) */}
         <label className="mt-3 flex items-center gap-2 text-label text-paper">

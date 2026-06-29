@@ -2,7 +2,7 @@
 // 화면(React)은 파일을 직접 만지지 않고, 항상 이 래퍼를 통해 Rust에 요청한다.
 
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 /** 읽어온 EXIF 태그 묶음 (태그명 → 값) */
 export type ExifTags = Record<string, unknown>;
@@ -87,7 +87,11 @@ export interface SaveItem {
   lensMake?: string;
   lensModel?: string;
   film?: string;
+  iso?: string;
+  ei?: string;
   devLab?: string;
+  latitude?: string;
+  longitude?: string;
 }
 
 export interface BatchItemResult {
@@ -104,12 +108,69 @@ export interface BatchResult {
   items: BatchItemResult[];
 }
 
-/** 여러 장을 한 번에 안전 저장. 진행률은 "save-progress" 이벤트로. */
-export async function saveBatch(items: SaveItem[], backup: boolean): Promise<BatchResult> {
-  return await invoke<BatchResult>("save_batch", { items, backup });
+/** 여러 장을 한 번에 안전 저장. 진행률은 "save-progress" 이벤트로.
+ *  scrubScanner=true 면 스캐너 메타데이터를 선별 삭제. */
+export async function saveBatch(
+  items: SaveItem[],
+  backup: boolean,
+  scrubScanner: boolean
+): Promise<BatchResult> {
+  return await invoke<BatchResult>("save_batch", { items, backup, scrubScanner });
 }
 
 /** 진행 중인 배치 저장 취소 요청 */
 export async function cancelSave(): Promise<void> {
   await invoke("cancel_save");
+}
+
+/** 롤 공통 조합 프리셋 (FR-11) */
+export interface Preset {
+  name: string;
+  make: string;
+  model: string;
+  lensMake: string;
+  lensModel: string;
+  filmStock: string;
+  iso: string;
+  ei: string;
+  devLab: string;
+}
+
+export async function loadPresets(): Promise<Preset[]> {
+  return await invoke<Preset[]>("load_presets");
+}
+
+export async function savePresets(presets: Preset[]): Promise<void> {
+  await invoke("save_presets", { presets });
+}
+
+/** 편집 세션 자동저장/복원 (FR-12). 타입은 호출부(App)에서 지정. */
+export async function saveSession(session: unknown): Promise<void> {
+  await invoke("save_session", { session });
+}
+export async function loadSession<T>(): Promise<T | null> {
+  return await invoke<T | null>("load_session");
+}
+
+/** CSV 입출력 (FR-14) */
+export async function pickSaveCsv(): Promise<string | null> {
+  const p = await save({
+    defaultPath: "film-exif.csv",
+    filters: [{ name: "CSV", extensions: ["csv"] }],
+  });
+  return typeof p === "string" ? p : null;
+}
+export async function pickOpenCsv(): Promise<string | null> {
+  const p = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "CSV", extensions: ["csv"] }],
+  });
+  return typeof p === "string" ? p : null;
+}
+export async function writeTextFile(path: string, content: string): Promise<void> {
+  await invoke("write_text_file", { path, content });
+}
+export async function readTextFile(path: string): Promise<string> {
+  return await invoke<string>("read_text_file", { path });
 }

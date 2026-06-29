@@ -7,6 +7,10 @@ interface Props {
   onSaveAll: () => void;
   saving: boolean;
   batchInfo: string | null;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
 export default function StatusBar({
@@ -15,21 +19,38 @@ export default function StatusBar({
   onSaveAll,
   saving,
   batchInfo,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
 }: Props) {
   return (
     <footer className="flex h-10 shrink-0 items-center justify-between border-t border-line bg-charcoal px-4">
-      <span className="font-mono text-label text-muted">
-        선택 {selected} / 전체 {total}
-      </span>
       <div className="flex items-center gap-3">
-        {batchInfo && <span className="text-label text-sage">{batchInfo}</span>}
+        <span className="font-mono text-label text-muted">
+          선택 {selected} / 전체 {total}
+        </span>
         <button
           type="button"
-          disabled
-          className="rounded border border-line px-3 py-1 text-label text-muted"
+          onClick={onUndo}
+          disabled={!canUndo}
+          title="실행 취소"
+          className="rounded border border-line px-2 py-0.5 text-label text-paper hover:border-amber disabled:opacity-30"
         >
-          프리셋 ▾
+          ↶ 취소
         </button>
+        <button
+          type="button"
+          onClick={onRedo}
+          disabled={!canRedo}
+          title="다시 실행"
+          className="rounded border border-line px-2 py-0.5 text-label text-paper hover:border-amber disabled:opacity-30"
+        >
+          ↷ 다시
+        </button>
+      </div>
+      <div className="flex items-center gap-3">
+        {batchInfo && <span className="text-label text-sage">{batchInfo}</span>}
         <button
           type="button"
           onClick={onSaveAll}

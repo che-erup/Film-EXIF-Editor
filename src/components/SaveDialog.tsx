@@ -7,6 +7,8 @@ interface Props {
   stage: "confirm" | "saving" | "done";
   items: SaveItem[];
   backupOriginal: boolean;
+  scrubScanner: boolean;
+  onScrubChange: (v: boolean) => void;
   progress: { done: number; total: number };
   result: BatchResult | null;
   onConfirm: () => void;
@@ -21,6 +23,8 @@ export default function SaveDialog({
   stage,
   items,
   backupOriginal,
+  scrubScanner,
+  onScrubChange,
   progress,
   result,
   onConfirm,
@@ -35,6 +39,8 @@ export default function SaveDialog({
           <Confirm
             items={items}
             backupOriginal={backupOriginal}
+            scrubScanner={scrubScanner}
+            onScrubChange={onScrubChange}
             onConfirm={onConfirm}
             onClose={onClose}
           />
@@ -73,11 +79,15 @@ export default function SaveDialog({
 function Confirm({
   items,
   backupOriginal,
+  scrubScanner,
+  onScrubChange,
   onConfirm,
   onClose,
 }: {
   items: SaveItem[];
   backupOriginal: boolean;
+  scrubScanner: boolean;
+  onScrubChange: (v: boolean) => void;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -85,6 +95,7 @@ function Confirm({
   const camCount = items.filter((i) => i.make || i.model).length;
   const lensCount = items.filter((i) => i.lensMake || i.lensModel).length;
   const filmCount = items.filter((i) => i.film || i.devLab).length;
+  const nothing = items.length === 0;
 
   return (
     <>
@@ -98,6 +109,22 @@ function Confirm({
         <li>· 렌즈(제조사/모델): {lensCount}장</li>
         <li>· 필름/현상소: {filmCount}장</li>
       </ul>
+
+      <label className="mb-2 flex items-center gap-2 text-body text-paper">
+        <input
+          type="checkbox"
+          checked={scrubScanner}
+          onChange={(e) => onScrubChange(e.target.checked)}
+        />
+        스캐너 정보 지우기
+      </label>
+      {scrubScanner && (
+        <p className="mb-3 text-label text-muted">
+          스캐너/스캔SW가 남긴 태그(Software·HostComputer·메이커노트·스캐너 Make/Model 등)만 삭제합니다.
+          촬영일·디지털화 날짜·입력한 카메라/렌즈/필름은 보존됩니다. (변경 없는 컷도 포함)
+        </p>
+      )}
+
       <p className="mb-4 text-label text-muted">
         백업: {backupOriginal ? "켜짐 — original 폴더에 원본 복사" : "꺼짐 — 원본 직접 수정(되돌릴 수 없음)"}
       </p>
@@ -112,11 +139,15 @@ function Confirm({
         <button
           type="button"
           onClick={onConfirm}
-          className="rounded bg-amber px-4 py-1.5 text-body font-medium text-ink hover:brightness-110"
+          disabled={nothing}
+          className="rounded bg-amber px-4 py-1.5 text-body font-medium text-ink hover:brightness-110 disabled:opacity-40"
         >
           저장
         </button>
       </div>
+      {nothing && (
+        <p className="mt-2 text-right text-label text-muted">저장할 변경이 없습니다.</p>
+      )}
     </>
   );
 }

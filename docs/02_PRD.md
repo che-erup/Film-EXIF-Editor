@@ -90,10 +90,11 @@
 - 저장 대상 태그: 아래 §4 데이터 모델 참조
 - **AC**: 저장 후 ExifTool로 다시 읽으면 입력값이 그대로 확인된다. 다른 EXIF 뷰어(예: macOS 정보 창)에서도 촬영일이 의도대로 보인다. 파일 손상이 없다.
 
-### FR-10 · 필름·현상소 → UserComment 매핑 — P0
-필름 종류·현상소는 표준 태그가 없으므로 `UserComment`에 구조화된 텍스트로 저장하고, 가능하면 XMP에도 병행 기록한다.
-- 저장 예: `Film: Portra 400; DevLab: OO현상소`
-- **AC**: 화면에는 "필름", "현상소" 전용 칸으로 노출되지만 저장 시 규칙대로 `UserComment`에 합쳐진다. 다시 불러오면 같은 값으로 파싱되어 칸에 표시된다.
+### FR-10 · 필름·현상소 태그 매핑 — P0
+- **필름 종류 → `ImageDescription`(EXIF)** 에 기록하고, 호환을 위해 `XMP-dc:Description` 에도 병행 기록한다. (필름 이름 전용 표준 태그가 없어, 필름 사진가들이 널리 쓰는 설명 필드를 사용)
+- **현상소 → `UserComment`** 에 `DevLab: ...` 형태로 기록한다(표준 태그 없음).
+- **필름 감도(ISO, 박스 감도) → `ISOSpeedRatings`**(=EXIF `ISO`), **노출지수(EI, 실제 촬영 감도) → `ExposureIndex`**. 정상 노출이면 둘이 같고, 증감(푸시/풀) 촬영이면 다르다. 둘 다 롤 공통 입력.
+- **AC**: 화면에는 "필름", "현상소" 전용 칸으로 노출되지만 저장 시 위 태그에 기록되고, 다시 불러오면 각 칸에 복원된다(필름은 ImageDescription 우선, 레거시 UserComment의 Film도 인식).
 
 ### FR-11 · 프리셋(조합 저장) — P1
 자주 쓰는 카메라+렌즈+필름+현상소 조합을 이름 붙여 저장/적용.
@@ -137,8 +138,8 @@
 | 카메라 모델 | `Model` | 문자열 · FM2 |
 | 렌즈 제조사 | `LensMake` | 문자열 · Nikon |
 | 렌즈 모델 | `LensModel` | 문자열 · 50mm f/1.4 |
-| 필름 종류 | `UserComment`(+XMP) | `Film: Portra 400` |
-| 현상소 | `UserComment`(+XMP) | `DevLab: OO현상소` |
+| 필름 종류 | `ImageDescription`(+XMP 설명) | `Portra 400` |
+| 현상소 | `UserComment` | `DevLab: OO현상소` |
 
 ### 컷별
 | 입력칸 | EXIF 태그 | 형식/예시 |
@@ -149,7 +150,7 @@
 ### 확장(P1~P2)
 초점거리 `FocalLength`, 조리개 `FNumber`, 셔터스피드 `ExposureTime`, 감도 `ISOSpeedRatings`/`ExposureIndex`, 위치 `GPSLatitude`/`GPSLongitude`.
 
-> 표준 태그가 없는 필름·현상소는 `UserComment`에 `키: 값; 키: 값` 규칙으로 직렬화하고, 불러올 때 같은 규칙으로 파싱한다.
+> 필름은 `ImageDescription`(+XMP 설명)에, 현상소는 `UserComment`에 `DevLab: ...` 형태로 기록한다. 불러올 때 필름은 ImageDescription에서, 현상소는 UserComment에서 복원한다(규칙은 Rust 한 곳).
 >
 > **스캐너 정리(FR-17)**: 위 매핑과 별개로, 스캐너/스캔SW가 남긴 태그(`Software`·`ProcessingSoftware`·`HostComputer`·`MakerNotes`·스캐너 `Make`/`Model` 등)는 선별 삭제 대상이다. 스캔 일시는 디지털화 날짜(`CreateDate`/`DateTimeDigitized`)로 **보존**한다.
 

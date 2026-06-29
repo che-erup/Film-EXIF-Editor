@@ -5,7 +5,7 @@ use crate::exiftool::ExifToolService;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 /// 배치 저장 취소 플래그(전역 상태).
 #[derive(Default)]
@@ -17,6 +17,97 @@ pub struct SaveControl {
 #[tauri::command]
 pub fn cancel_save(control: State<'_, SaveControl>) {
     control.cancel.store(true, Ordering::Relaxed);
+}
+
+// ───────────────────────── 프리셋 (단계 10, FR-11) ─────────────────────────
+
+/// 롤 공통 조합 프리셋. (이름 + 롤 공통 값)
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Preset {
+    pub name: String,
+    pub make: String,
+    pub model: String,
+    pub lens_make: String,
+    pub lens_model: String,
+    pub film_stock: String,
+    pub iso: String,
+    pub ei: String,
+    pub dev_lab: String,
+}
+
+fn presets_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("설정 폴더 경로 확인 실패: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("설정 폴더 생성 실패: {e}"))?;
+    Ok(dir.join("presets.json"))
+}
+
+/// 저장된 프리셋 목록을 읽는다. (없으면 빈 목록)
+#[tauri::command]
+pub fn load_presets(app: tauri::AppHandle) -> Result<Vec<Preset>, String> {
+    let path = presets_path(&app)?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let data = std::fs::read_to_string(&path).map_err(|e| format!("프리셋 읽기 실패: {e}"))?;
+    serde_json::from_str(&data).map_err(|e| format!("프리셋 파싱 실패: {e}"))
+}
+
+/// 프리셋 목록 전체를 저장한다.
+#[tauri::command]
+pub fn save_presets(app: tauri::AppHandle, presets: Vec<Preset>) -> Result<(), String> {
+    let path = presets_path(&app)?;
+    let data =
+        serde_json::to_string_pretty(&presets).map_err(|e| format!("프리셋 직렬화 실패: {e}"))?;
+    std::fs::write(&path, data).map_err(|e| format!("프리셋 저장 실패: {e}"))
+}
+
+// ───────────────────────── 텍스트 파일 입출력 (CSV용, 단계 12) ─────────────────────────
+
+/// 텍스트 파일 쓰기 (CSV 내보내기 등)
+#[tauri::command]
+pub fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| format!("파일 쓰기 실패: {e}"))
+}
+
+/// 텍스트 파일 읽기 (CSV 가져오기 등)
+#[tauri::command]
+pub fn read_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| format!("파일 읽기 실패: {e}"))
+}
+
+// ───────────────────────── 세션 자동복원 (단계 11, FR-12) ─────────────────────────
+
+fn session_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("데이터 폴더 경로 확인 실패: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("데이터 폴더 생성 실패: {e}"))?;
+    Ok(dir.join("session.json"))
+}
+
+/// 편집 세션(편집 의도)을 저장한다. 파일 자체는 건드리지 않는다.
+#[tauri::command]
+pub fn save_session(app: tauri::AppHandle, session: serde_json::Value) -> Result<(), String> {
+    let path = session_path(&app)?;
+    let data = serde_json::to_string(&session).map_err(|e| format!("세션 직렬화 실패: {e}"))?;
+    std::fs::write(&path, data).map_err(|e| format!("세션 저장 실패: {e}"))
+}
+
+/// 저장된 세션을 읽는다. (없으면 null)
+#[tauri::command]
+pub fn load_session(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
+    let path = session_path(&app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let data = std::fs::read_to_string(&path).map_err(|e| format!("세션 읽기 실패: {e}"))?;
+    let v = serde_json::from_str(&data).map_err(|e| format!("세션 파싱 실패: {e}"))?;
+    Ok(Some(v))
 }
 
 /// 지원 이미지 확장자 (PRD FR-1)
@@ -50,20 +141,26 @@ pub async fn load_image(
         .cloned()
         .ok_or_else(|| format!("EXIF 결과가 비어 있습니다 (경로: {path})"))?;
 
-    // UserComment를 파싱해 Film/DevLab을 별도 키로 복원해 넣는다(FR-10).
+    // Film/DevLab 복원(FR-10):
+    //   필름 = ImageDescription (없으면 레거시: UserComment의 Film)
+    //   현상소 = UserComment의 DevLab
     if let Some(map) = obj.as_object_mut() {
-        if let Some(uc) = map
+        let (legacy_film, dev) = map
             .get("UserComment")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-        {
-            let (film, dev) = crate::domain::usercomment::parse(&uc);
-            if let Some(f) = film {
-                map.insert("Film".to_string(), serde_json::Value::String(f));
-            }
-            if let Some(d) = dev {
-                map.insert("DevLab".to_string(), serde_json::Value::String(d));
-            }
+            .map(crate::domain::usercomment::parse)
+            .unwrap_or((None, None));
+        let img_desc = map
+            .get("ImageDescription")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let film = img_desc.or(legacy_film);
+        if let Some(f) = film {
+            map.insert("Film".to_string(), serde_json::Value::String(f));
+        }
+        if let Some(d) = dev {
+            map.insert("DevLab".to_string(), serde_json::Value::String(d));
         }
     }
 
@@ -236,7 +333,11 @@ pub struct SaveItem {
     pub lens_make: Option<String>,
     pub lens_model: Option<String>,
     pub film: Option<String>,
+    pub iso: Option<String>,
+    pub ei: Option<String>,
     pub dev_lab: Option<String>,
+    pub latitude: Option<String>,
+    pub longitude: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -263,6 +364,7 @@ pub struct BatchResult {
 pub async fn save_batch(
     items: Vec<SaveItem>,
     backup: bool,
+    scrub_scanner: bool,
     app: tauri::AppHandle,
     service: State<'_, ExifToolService>,
     control: State<'_, SaveControl>,
@@ -276,7 +378,7 @@ pub async fn save_batch(
         if control.cancel.load(Ordering::Relaxed) {
             break; // 취소 요청 — 남은 컷은 처리하지 않음
         }
-        let (ok, message) = match save_one(item, backup, &service).await {
+        let (ok, message) = match save_one(item, backup, scrub_scanner, &service).await {
             Ok(m) => {
                 ok_count += 1;
                 (true, m)
@@ -305,6 +407,7 @@ pub async fn save_batch(
 async fn save_one(
     item: &SaveItem,
     backup: bool,
+    scrub_scanner: bool,
     service: &ExifToolService,
 ) -> Result<String, String> {
     // 1) 의도한 (EXIF 태그, 값) 목록
@@ -321,13 +424,59 @@ async fn save_one(
     push_if(&mut writes, "Model", &item.model);
     push_if(&mut writes, "LensMake", &item.lens_make);
     push_if(&mut writes, "LensModel", &item.lens_model);
-    // 필름/현상소 → UserComment (직렬화 규칙은 domain::usercomment 한 곳)
-    let uc = crate::domain::usercomment::serialize(item.film.as_deref(), item.dev_lab.as_deref());
-    if let Some(uc) = &uc {
-        writes.push(("UserComment".to_string(), uc.clone()));
+    // 필름 감도 → ISO(=ISOSpeedRatings), 노출지수 → ExposureIndex
+    push_if(&mut writes, "ISO", &item.iso);
+    push_if(&mut writes, "ExposureIndex", &item.ei);
+    // 필름 → ImageDescription (+ XMP 설명 병행), 현상소 → UserComment
+    let mut xmp_extra: Vec<String> = Vec::new();
+    if let Some(film) = item.film.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        writes.push(("ImageDescription".to_string(), film.to_string()));
+        xmp_extra.push(format!("-XMP-dc:Description={film}"));
+    }
+    if let Some(uc) = crate::domain::usercomment::serialize(None, item.dev_lab.as_deref()) {
+        writes.push(("UserComment".to_string(), uc));
     }
 
-    if writes.is_empty() {
+    // 스캐너 메타데이터 선별 삭제 인자 (전체 삭제 -all= 는 쓰지 않는다)
+    let mut scrub_args: Vec<String> = Vec::new();
+    if scrub_scanner {
+        for tag in [
+            "Software",
+            "ProcessingSoftware",
+            "HostComputer",
+            "XMP-xmp:CreatorTool",
+            "IPTC:OriginatingProgram",
+        ] {
+            scrub_args.push(format!("-{tag}="));
+        }
+        scrub_args.push("-MakerNotes:all=".to_string());
+        // 스캐너가 쓴 Make/Model은 사용자가 직접 입력하지 않은 경우에만 삭제
+        if item.make.as_deref().map(str::trim).unwrap_or("").is_empty() {
+            scrub_args.push("-Make=".to_string());
+        }
+        if item.model.as_deref().map(str::trim).unwrap_or("").is_empty() {
+            scrub_args.push("-Model=".to_string());
+        }
+    }
+
+    // GPS 좌표 (검증 대상 아님 — 읽기 형식이 달라 직접 비교가 어려움)
+    let mut gps_args: Vec<String> = Vec::new();
+    if let Some(lat) = parse_coord(&item.latitude, 90.0) {
+        gps_args.push(format!("-GPSLatitude={}", lat.abs()));
+        gps_args.push(format!(
+            "-GPSLatitudeRef={}",
+            if lat >= 0.0 { "N" } else { "S" }
+        ));
+    }
+    if let Some(lon) = parse_coord(&item.longitude, 180.0) {
+        gps_args.push(format!("-GPSLongitude={}", lon.abs()));
+        gps_args.push(format!(
+            "-GPSLongitudeRef={}",
+            if lon >= 0.0 { "E" } else { "W" }
+        ));
+    }
+
+    if writes.is_empty() && scrub_args.is_empty() && gps_args.is_empty() {
         return Ok("변경 없음".to_string());
     }
 
@@ -336,18 +485,24 @@ async fn save_one(
         backup_to_original(&item.path)?;
     }
 
-    // 3) 쓰기 (바뀐 태그만, -overwrite_original)
+    // 3) 쓰기 (선별 삭제 + 바뀐 태그, -overwrite_original)
     let mut args = vec![
         "-charset".to_string(),
         "filename=UTF8".to_string(),
         "-overwrite_original".to_string(),
     ];
+    for s in &scrub_args {
+        args.push(s.clone());
+    }
     for (tag, val) in &writes {
         args.push(format!("-{tag}={val}"));
     }
-    // 필름/현상소는 XMP에도 병행 기록(호환성). 검증은 EXIF UserComment로 한다.
-    if let Some(uc) = &uc {
-        args.push(format!("-XMP-exif:UserComment={uc}"));
+    for g in &gps_args {
+        args.push(g.clone());
+    }
+    // 필름은 XMP 설명에도 병행 기록(호환성). 검증은 EXIF 쪽으로 한다.
+    for x in &xmp_extra {
+        args.push(x.clone());
     }
     args.push(item.path.clone());
     service.execute(args).await?;
@@ -371,12 +526,38 @@ async fn save_one(
         .get(0)
         .ok_or_else(|| "검증 결과가 비어 있습니다".to_string())?;
     for (tag, val) in &writes {
-        let got = obj.get(tag).and_then(|v| v.as_str()).unwrap_or("");
-        if got != val {
+        // ISO·ExposureIndex 등은 숫자로 돌아올 수 있으므로 문자열로 변환해 비교한다.
+        let got = obj.get(tag).map(json_to_compare_string).unwrap_or_default();
+        if &got != val {
             return Err(format!("검증 불일치: {tag} 기대 '{val}' / 실제 '{got}'"));
         }
     }
     Ok("저장 완료".to_string())
+}
+
+/// JSON 값을 비교용 문자열로 변환 (문자열/숫자/불리언 처리).
+fn json_to_compare_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+/// 좌표 문자열을 파싱한다. 범위(|값| <= max)를 벗어나거나 숫자가 아니면 None.
+fn parse_coord(v: &Option<String>, max: f64) -> Option<f64> {
+    let s = v.as_deref()?.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let n: f64 = s.parse().ok()?;
+    if n.abs() <= max {
+        Some(n)
+    } else {
+        None
+    }
 }
 
 fn push_if(writes: &mut Vec<(String, String)>, tag: &str, val: &Option<String>) {
