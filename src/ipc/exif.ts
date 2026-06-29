@@ -100,10 +100,16 @@ export interface BatchResult {
   total: number;
   okCount: number;
   failCount: number;
+  cancelled: number;
   items: BatchItemResult[];
 }
 
 /** 여러 장을 한 번에 안전 저장. 진행률은 "save-progress" 이벤트로. */
 export async function saveBatch(items: SaveItem[], backup: boolean): Promise<BatchResult> {
   return await invoke<BatchResult>("save_batch", { items, backup });
+}
+
+/** 진행 중인 배치 저장 취소 요청 */
+export async function cancelSave(): Promise<void> {
+  await invoke("cancel_save");
 }

@@ -4,7 +4,20 @@
 use crate::exiftool::ExifToolService;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, State};
+
+/// 배치 저장 취소 플래그(전역 상태).
+#[derive(Default)]
+pub struct SaveControl {
+    pub cancel: AtomicBool,
+}
+
+/// 진행 중인 배치 저장을 취소 요청한다.
+#[tauri::command]
+pub fn cancel_save(control: State<'_, SaveControl>) {
+    control.cancel.store(true, Ordering::Relaxed);
+}
 
 /// 지원 이미지 확장자 (PRD FR-1)
 const SUPPORTED_EXT: [&str; 6] = ["jpg", "jpeg", "tif", "tiff", "png", "dng"];
@@ -240,23 +253,29 @@ pub struct BatchResult {
     pub total: usize,
     pub ok_count: usize,
     pub fail_count: usize,
+    pub cancelled: usize,
     pub items: Vec<BatchItemResult>,
 }
 
 /// 여러 장을 한 번에 안전 저장한다. 컷마다 독립 처리(한 장 실패해도 계속).
-/// 진행 상황은 "save-progress" 이벤트({done,total})로 보낸다.
+/// 진행 상황은 "save-progress" 이벤트({done,total})로 보낸다. 취소 가능.
 #[tauri::command]
 pub async fn save_batch(
     items: Vec<SaveItem>,
     backup: bool,
     app: tauri::AppHandle,
     service: State<'_, ExifToolService>,
+    control: State<'_, SaveControl>,
 ) -> Result<BatchResult, String> {
     let total = items.len();
+    control.cancel.store(false, Ordering::Relaxed); // 시작 시 플래그 초기화
     let mut results = Vec::with_capacity(total);
     let mut ok_count = 0usize;
 
     for (i, item) in items.iter().enumerate() {
+        if control.cancel.load(Ordering::Relaxed) {
+            break; // 취소 요청 — 남은 컷은 처리하지 않음
+        }
         let (ok, message) = match save_one(item, backup, &service).await {
             Ok(m) => {
                 ok_count += 1;
@@ -272,10 +291,12 @@ pub async fn save_batch(
         let _ = app.emit("save-progress", serde_json::json!({ "done": i + 1, "total": total }));
     }
 
+    let processed = results.len();
     Ok(BatchResult {
         total,
         ok_count,
-        fail_count: total - ok_count,
+        fail_count: processed - ok_count,
+        cancelled: total - processed,
         items: results,
     })
 }

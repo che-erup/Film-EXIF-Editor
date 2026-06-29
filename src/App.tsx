@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
-import { confirm } from "@tauri-apps/plugin-dialog";
 import ThumbnailPanel from "./components/Layout/ThumbnailPanel";
 import PreviewPanel from "./components/Layout/PreviewPanel";
 import EditFormPanel from "./components/Layout/EditFormPanel";
 import StatusBar from "./components/Layout/StatusBar";
+import SaveDialog from "./components/SaveDialog";
 import {
   pickImageFiles,
   pickFolder,
@@ -13,9 +13,11 @@ import {
   loadImage,
   saveDate,
   saveBatch,
+  cancelSave,
   type ExifTags,
   type SaveResult,
   type SaveItem,
+  type BatchResult,
 } from "./ipc/exif";
 import { looseNormalize, parseDto, formatDto, addSeconds } from "./lib/dateUtils";
 
@@ -65,13 +67,15 @@ function App() {
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
   const [backupOriginal, setBackupOriginal] = useState(true);
 
-  // 배치 저장(모든 사진)
-  const [batchSaving, setBatchSaving] = useState(false);
+  // 배치 저장(모든 사진) — 요약 → 저장 → 결과
+  const [saveStage, setSaveStage] = useState<"idle" | "confirm" | "saving" | "done">("idle");
+  const [saveItems, setSaveItems] = useState<SaveItem[]>([]);
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number }>({
     done: 0,
     total: 0,
   });
-  const [batchInfo, setBatchInfo] = useState<string | null>(null);
+  const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
+  const [statusNote, setStatusNote] = useState<string | null>(null);
 
   // 롤 공통 입력 + 적용(메모리 전용 — 디스크는 안 건드림)
   const [rollCommon, setRollCommon] = useState<RollCommon>(EMPTY_ROLL);
@@ -377,10 +381,10 @@ function App() {
     );
   }
 
-  // 모든 사진(변경 있는 컷) 한 번에 저장
-  async function handleSaveAll() {
-    const items: SaveItem[] = frames
-      .filter((f) => f.pendingEdits.dateTimeOriginal || f.commonApplied)
+  // 변경이 있는 컷에서 저장 아이템 생성 (특정 경로만 필터 가능 — 재시도용)
+  function buildSaveItems(only?: Set<string>): SaveItem[] {
+    return frames
+      .filter((f) => (!only || only.has(f.path)) && (f.pendingEdits.dateTimeOriginal || f.commonApplied))
       .map((f) => ({
         path: f.path,
         dateTimeOriginal: f.pendingEdits.dateTimeOriginal,
@@ -391,22 +395,25 @@ function App() {
         film: f.pendingCommon.filmStock,
         devLab: f.pendingCommon.devLab,
       }));
+  }
 
+  // 1) "모든 사진 저장" → 변경 요약 확인
+  function openSave() {
+    const items = buildSaveItems();
     if (items.length === 0) {
-      setBatchInfo("저장할 변경이 없습니다 (먼저 적용하세요)");
+      setStatusNote("저장할 변경이 없습니다 (먼저 적용하세요)");
       return;
     }
+    setStatusNote(null);
+    setBatchResult(null);
+    setSaveItems(items);
+    setSaveStage("confirm");
+  }
 
-    const yes = await confirm(
-      `${items.length}장을 저장합니다.\n백업: ${
-        backupOriginal ? "켜짐 (original 폴더에 복사)" : "꺼짐 (원본 직접 수정)"
-      }\n계속할까요?`,
-      { title: "모든 사진 저장" }
-    );
-    if (!yes) return;
-
-    setBatchSaving(true);
-    setBatchInfo(null);
+  // 2) 실제 저장 실행 (확인/재시도 공통)
+  async function runSave(items: SaveItem[]) {
+    setSaveItems(items);
+    setSaveStage("saving");
     setBatchProgress({ done: 0, total: items.length });
     const unlisten = await listen<{ done: number; total: number }>(
       "save-progress",
@@ -414,12 +421,11 @@ function App() {
     );
     try {
       const res = await saveBatch(items, backupOriginal);
-      setBatchInfo(`${res.okCount} 성공 / ${res.failCount} 실패`);
+      setBatchResult(res);
+      setSaveStage("done");
       // 저장된 컷의 태그 캐시를 비워 다음 선택 시 새로 읽게 한다
       const okPaths = new Set(res.items.filter((it) => it.ok).map((it) => it.path));
-      setFrames((prev) =>
-        prev.map((f) => (okPaths.has(f.path) ? { ...f, tags: null } : f))
-      );
+      setFrames((prev) => prev.map((f) => (okPaths.has(f.path) ? { ...f, tags: null } : f)));
       if (currentPath && okPaths.has(currentPath)) {
         framesRef.current = framesRef.current.map((f) =>
           f.path === currentPath ? { ...f, tags: null } : f
@@ -427,11 +433,17 @@ function App() {
         void ensureTags(currentPath);
       }
     } catch (e) {
-      setBatchInfo(`저장 실패: ${String(e)}`);
+      setStatusNote(`저장 실패: ${String(e)}`);
+      setSaveStage("idle");
     } finally {
       unlisten();
-      setBatchSaving(false);
     }
+  }
+
+  function retryFailed() {
+    if (!batchResult) return;
+    const failedPaths = new Set(batchResult.items.filter((i) => !i.ok).map((i) => i.path));
+    void runSave(buildSaveItems(failedPaths));
   }
 
   return (
@@ -477,20 +489,23 @@ function App() {
       <StatusBar
         selected={selected.size}
         total={frames.length}
-        onSaveAll={handleSaveAll}
-        saving={batchSaving}
-        batchInfo={batchInfo}
+        onSaveAll={openSave}
+        saving={saveStage === "saving"}
+        batchInfo={statusNote}
       />
 
-      {batchSaving && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-ink/80">
-          <div className="rounded-lg border border-line bg-charcoal px-6 py-4 text-center">
-            <p className="text-body text-paper">저장 중…</p>
-            <p className="mt-1 font-mono text-label text-amber">
-              {batchProgress.done} / {batchProgress.total}
-            </p>
-          </div>
-        </div>
+      {saveStage !== "idle" && (
+        <SaveDialog
+          stage={saveStage}
+          items={saveItems}
+          backupOriginal={backupOriginal}
+          progress={batchProgress}
+          result={batchResult}
+          onConfirm={() => void runSave(saveItems)}
+          onCancelSave={() => void cancelSave()}
+          onRetryFailed={retryFailed}
+          onClose={() => setSaveStage("idle")}
+        />
       )}
 
       {dropping && (
