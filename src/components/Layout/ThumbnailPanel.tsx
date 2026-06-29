@@ -108,6 +108,11 @@ export default function ThumbnailPanel({
                     공통
                   </span>
                 )}
+                {f.dateApplied && (
+                  <span className="absolute bottom-0.5 right-0.5 rounded bg-amber/90 px-1 text-label text-ink">
+                    날짜
+                  </span>
+                )}
               </button>
             );
           })}

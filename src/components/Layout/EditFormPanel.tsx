@@ -2,11 +2,12 @@ import { useState } from "react";
 import Calendar from "../Calendar";
 import type { SaveResult } from "../../ipc/exif";
 import type { RollCommon } from "../../App";
+import { looseNormalize } from "../../lib/dateUtils";
 
 /**
  * 오른쪽 패널 — 메타데이터 편집 폼 (2구역).
- * [롤 공통] 카메라·렌즈·필름·현상소 입력 (적용 동작은 단계 6)
- * [컷별]   촬영 날짜·시간(달력+직접 입력) + 이 사진 안전 저장 (단계 3)
+ * [롤 공통] 카메라·렌즈·필름·현상소 입력 + 전체에 적용 (단계 6)
+ * [컷별]   촬영 날짜·시간(달력+직접+느슨한 입력) · 선택 항목에 적용/시간 자동 증가(단계 7) · 즉시 저장(단계 3)
  */
 interface Props {
   hasImage: boolean;
@@ -21,10 +22,12 @@ interface Props {
   onSave: () => void;
   saving: boolean;
   saveResult: SaveResult | null;
+  selectedCount: number;
+  onApplyDate: (opts: { autoIncrement: boolean; intervalSec: number }) => void;
+  applyDateInfo: string | null;
+  backupOriginal: boolean;
+  onBackupChange: (v: boolean) => void;
 }
-
-/** EXIF 표준형 간이 검사 (상세 검증은 Rust에서) */
-const DTO_RE = /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/;
 
 /** "YYYY:MM:DD HH:MM:SS" → 달력/시간 입력값 { date:"YYYY-MM-DD", time:"HH:MM:SS" } */
 function dtoToPickers(dto: string): { date: string; time: string } {
@@ -58,15 +61,24 @@ export default function EditFormPanel({
   onSave,
   saving,
   saveResult,
+  selectedCount,
+  onApplyDate,
+  applyDateInfo,
+  backupOriginal,
+  onBackupChange,
 }: Props) {
   const trimmed = dateInput.trim();
-  const looksValid = DTO_RE.test(trimmed);
+  const norm = looseNormalize(dateInput);
+  const looksValid = norm.ok;
   const showWarning = hasImage && trimmed.length > 0 && !looksValid;
   const canSave = hasImage && looksValid && !saving;
+  const canApplyDate = selectedCount > 0 && looksValid;
 
   const pickers = dtoToPickers(dateInput);
   const disabled = !hasImage || saving;
   const [showCal, setShowCal] = useState(false);
+  const [autoInc, setAutoInc] = useState(false);
+  const [intervalSec, setIntervalSec] = useState(1);
 
   function onDatePart(v: string) {
     // 달력에서 날짜 선택 → 기존 시간(없으면 12:00:00) 유지하며 합침
@@ -181,7 +193,7 @@ export default function EditFormPanel({
           </div>
         )}
 
-        {/* 직접 입력 (오래된 연도 타이핑용) */}
+        {/* 직접/느슨한 입력 (오래된 연도 타이핑용) */}
         <label className="mt-2 block">
           <span className="mb-1 block text-label text-muted">또는 직접 입력</span>
           <input
@@ -189,24 +201,72 @@ export default function EditFormPanel({
             value={dateInput}
             onChange={(e) => onDateChange(e.target.value)}
             disabled={disabled}
-            placeholder="1998:05:10 12:00:00"
+            placeholder="1998 / 1998:05 / 1998:05:10 12:00:00"
             className="w-full rounded border border-line bg-ink px-2 py-1.5 font-mono text-body text-paper placeholder:text-muted focus:border-amber focus:outline-none disabled:opacity-50"
           />
-          <span className="mt-1 block text-label text-muted">형식: YYYY:MM:DD HH:MM:SS</span>
+          <span className="mt-1 block text-label text-muted">
+            연·월만 입력해도 됩니다 (나머지는 자동 보충)
+          </span>
           {showWarning && (
-            <span className="mt-1 block text-label text-rust">
-              형식이 올바르지 않습니다 (예: 1998:05:10 12:00:00)
-            </span>
+            <span className="mt-1 block text-label text-rust">{norm.error}</span>
           )}
         </label>
 
+        {/* 시간 자동 증가 옵션 */}
+        <label className="mt-3 flex items-center gap-2 text-label text-paper">
+          <input
+            type="checkbox"
+            checked={autoInc}
+            onChange={(e) => setAutoInc(e.target.checked)}
+            disabled={!hasImage}
+          />
+          시간 자동 증가
+          <input
+            type="number"
+            min={1}
+            value={intervalSec}
+            onChange={(e) => setIntervalSec(Math.max(1, parseInt(e.target.value || "1", 10)))}
+            disabled={!hasImage || !autoInc}
+            className="ml-1 w-16 rounded border border-line bg-ink px-1 py-0.5 text-center font-mono text-paper disabled:opacity-50"
+          />
+          초씩
+        </label>
+
+        {/* 선택 항목에 적용 (메모리) */}
+        <button
+          type="button"
+          onClick={() => onApplyDate({ autoIncrement: autoInc, intervalSec })}
+          disabled={!canApplyDate}
+          className="mt-3 w-full rounded bg-amber px-3 py-2 text-body font-medium text-ink hover:brightness-110 disabled:opacity-40"
+        >
+          선택 {selectedCount}장에 적용
+        </button>
+        {applyDateInfo && <p className="mt-1 text-label text-sage">{applyDateInfo}</p>}
+
+        {/* 원본 백업 여부 (저장 버튼 위) */}
+        <label className="mt-3 flex items-center gap-2 text-label text-paper">
+          <input
+            type="checkbox"
+            checked={backupOriginal}
+            onChange={(e) => onBackupChange(e.target.checked)}
+            disabled={!hasImage}
+          />
+          원본 백업 (original 폴더에 복사)
+        </label>
+        {!backupOriginal && (
+          <p className="text-label text-rust">
+            백업 없이 원본을 직접 수정합니다 — 되돌릴 수 없습니다.
+          </p>
+        )}
+
+        {/* 이 사진만 즉시 디스크 저장 (단계 9 배치 저장 전 단일 저장) */}
         <button
           type="button"
           onClick={onSave}
           disabled={!canSave}
-          className="mt-3 w-full rounded bg-amber px-3 py-2 text-body font-medium text-ink hover:brightness-110 disabled:opacity-40"
+          className="mt-2 w-full rounded border border-line px-3 py-2 text-body text-paper hover:border-amber disabled:opacity-40"
         >
-          {saving ? "저장 중…" : "이 사진 저장"}
+          {saving ? "저장 중…" : "이 사진만 즉시 저장"}
         </button>
 
         {!hasImage && (
@@ -230,7 +290,10 @@ export default function EditFormPanel({
               {saveResult.message}
             </p>
             {saveResult.ok && (
-              <p className="mt-1 font-mono text-label text-paper">검증값: {saveResult.verified}</p>
+              <>
+                <p className="mt-1 font-mono text-label text-paper">검증값: {saveResult.verified}</p>
+                <p className="mt-0.5 break-all text-label text-muted">백업: {saveResult.backup}</p>
+              </>
             )}
           </div>
         )}

@@ -23,7 +23,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::load_images,
             commands::load_image,
-            commands::save_date
+            commands::save_date,
+            commands::save_batch
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 애플리케이션 실행 중 오류가 발생했습니다");

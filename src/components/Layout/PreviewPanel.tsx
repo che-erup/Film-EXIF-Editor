@@ -14,7 +14,7 @@ interface Props {
   error: string | null;
 }
 
-/** 검증에 중요한 주요 태그 */
+/** 검증에 중요한 주요 태그 (Film/DevLab은 UserComment에서 복원된 값) */
 const KEY_TAGS = [
   "DateTimeOriginal",
   "CreateDate",
@@ -22,6 +22,8 @@ const KEY_TAGS = [
   "Model",
   "LensMake",
   "LensModel",
+  "Film",
+  "DevLab",
   "UserComment",
 ];
 

@@ -1,7 +1,7 @@
 {
   "name": "film-exif-tool",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "필름사진 스캔본의 EXIF를 쉽게 수정하는 데스크톱 앱",
   "scripts": {

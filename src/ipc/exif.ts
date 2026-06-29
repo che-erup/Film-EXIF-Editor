@@ -68,7 +68,42 @@ export interface SaveResult {
   message: string;
 }
 
-/** 촬영일(DateTimeOriginal)을 바꿔 안전 저장한다. (백업→쓰기→검증읽기) */
-export async function saveDate(path: string, datetime: string): Promise<SaveResult> {
-  return await invoke<SaveResult>("save_date", { path, datetime });
+/** 촬영일(DateTimeOriginal)을 바꿔 안전 저장한다. (백업→쓰기→검증읽기)
+ *  backup=false 면 _original 백업 없이 제자리 수정. */
+export async function saveDate(
+  path: string,
+  datetime: string,
+  backup: boolean
+): Promise<SaveResult> {
+  return await invoke<SaveResult>("save_date", { path, datetime, backup });
+}
+
+/** 배치 저장 — 한 장에 적용할 편집 묶음 */
+export interface SaveItem {
+  path: string;
+  dateTimeOriginal?: string;
+  make?: string;
+  model?: string;
+  lensMake?: string;
+  lensModel?: string;
+  film?: string;
+  devLab?: string;
+}
+
+export interface BatchItemResult {
+  path: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface BatchResult {
+  total: number;
+  okCount: number;
+  failCount: number;
+  items: BatchItemResult[];
+}
+
+/** 여러 장을 한 번에 안전 저장. 진행률은 "save-progress" 이벤트로. */
+export async function saveBatch(items: SaveItem[], backup: boolean): Promise<BatchResult> {
+  return await invoke<BatchResult>("save_batch", { items, backup });
 }

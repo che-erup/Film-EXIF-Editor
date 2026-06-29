@@ -1,4 +1,6 @@
-// 도메인 로직 — 검증 등. (UserComment 직렬화 등은 이후 단계에서 추가)
+// 도메인 로직 — 검증, UserComment 직렬화/파싱.
+
+pub mod usercomment;
 
 /// EXIF DateTimeOriginal 문자열을 검증하고 표준형으로 정규화한다.
 /// 입력/출력 형식: "YYYY:MM:DD HH:MM:SS" (느슨한 입력은 0 패딩으로 정규화).
