@@ -30,6 +30,7 @@ import {
 } from "./ipc/exif";
 import { looseNormalize, parseDto, formatDto, addSeconds } from "./lib/dateUtils";
 import { parseCsv, toCsv } from "./lib/csv";
+import { FILM_STOCKS } from "./lib/filmStocks";
 
 /** 화면에서 다루는 한 장 */
 export interface Frame {
@@ -215,6 +216,8 @@ function App() {
     const out = {} as Record<keyof RollCommon, string[]>;
     (Object.keys(tagOf) as (keyof RollCommon)[]).forEach((field) => {
       const set = new Set<string>(history[field] ?? []);
+      // 필름 칸에는 내장 필름 목록을 후보로 추가 (FR-16)
+      if (field === "filmStock") FILM_STOCKS.forEach((s) => set.add(s));
       const tk = tagOf[field];
       if (tk) {
         for (const f of frames) {
@@ -223,7 +226,8 @@ function App() {
           if (s.trim()) set.add(s.trim());
         }
       }
-      out[field] = Array.from(set).slice(0, 20);
+      // 필름 칸은 목록이 길어 자르지 않는다(브라우저가 입력에 맞춰 필터)
+      out[field] = field === "filmStock" ? Array.from(set) : Array.from(set).slice(0, 20);
     });
     return out;
   }, [frames, history]);

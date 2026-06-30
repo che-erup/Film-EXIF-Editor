@@ -1,6 +1,6 @@
 [package]
 name = "film-exif-tool"
-version = "0.6.0"
+version = "0.7.0"
 description = "필름사진 EXIF 수정 툴"
 authors = ["체"]
 edition = "2021"
