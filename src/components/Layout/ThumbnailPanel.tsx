@@ -16,6 +16,7 @@ interface Props {
   onPickFiles: () => void;
   onPickFolder: () => void;
   onSelectAll: () => void;
+  onClearAll: () => void;
   onImportCsv: () => void;
   onExportCsv: () => void;
   listInfo: string | null;
@@ -32,6 +33,7 @@ export default function ThumbnailPanel({
   onPickFiles,
   onPickFolder,
   onSelectAll,
+  onClearAll,
   onImportCsv,
   onExportCsv,
   listInfo,
@@ -141,14 +143,24 @@ export default function ThumbnailPanel({
             CSV 내보내기
           </button>
         </div>
-        <button
-          type="button"
-          onClick={onSelectAll}
-          disabled={frames.length === 0}
-          className="w-full rounded border border-line px-3 py-1.5 text-label text-paper hover:border-amber disabled:opacity-40"
-        >
-          전체 선택
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={onSelectAll}
+            disabled={frames.length === 0}
+            className="flex-1 rounded border border-line px-3 py-1.5 text-label text-paper hover:border-amber disabled:opacity-40"
+          >
+            전체 선택
+          </button>
+          <button
+            type="button"
+            onClick={onClearAll}
+            disabled={frames.length === 0}
+            className="flex-1 rounded border border-line px-3 py-1.5 text-label text-rust hover:border-rust disabled:opacity-40"
+          >
+            목록 비우기
+          </button>
+        </div>
       </footer>
     </aside>
   );

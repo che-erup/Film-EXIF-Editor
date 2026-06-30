@@ -18,6 +18,7 @@ interface Props {
   onSavePreset: (name: string) => void;
   onDeletePreset: (name: string) => void;
   onApplyCommon: () => void;
+  onApplyCommonSelected: () => void;
   applyDisabled: boolean;
   applyInfo: string | null;
   suggestions: Record<keyof RollCommon, string[]>;
@@ -66,6 +67,7 @@ export default function EditFormPanel({
   onSavePreset,
   onDeletePreset,
   onApplyCommon,
+  onApplyCommonSelected,
   applyDisabled,
   applyInfo,
   suggestions,
@@ -229,14 +231,24 @@ export default function EditFormPanel({
             suggestions={suggestions.devLab}
           />
         </div>
-        <button
-          type="button"
-          onClick={onApplyCommon}
-          disabled={applyDisabled}
-          className="mt-3 w-full rounded bg-amber px-3 py-2 text-body font-medium text-ink hover:brightness-110 disabled:opacity-40"
-        >
-          전체에 적용
-        </button>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={onApplyCommon}
+            disabled={applyDisabled}
+            className="flex-1 rounded bg-amber px-3 py-2 text-body font-medium text-ink hover:brightness-110 disabled:opacity-40"
+          >
+            전체에 적용
+          </button>
+          <button
+            type="button"
+            onClick={onApplyCommonSelected}
+            disabled={applyDisabled || selectedCount === 0}
+            className="flex-1 rounded border border-line px-3 py-2 text-body text-paper hover:border-amber disabled:opacity-40"
+          >
+            선택 적용
+          </button>
+        </div>
         {applyInfo && <p className="mt-2 text-label text-sage">{applyInfo}</p>}
       </section>
 

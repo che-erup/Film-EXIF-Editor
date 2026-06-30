@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import ThumbnailPanel from "./components/Layout/ThumbnailPanel";
 import PreviewPanel from "./components/Layout/PreviewPanel";
 import EditFormPanel from "./components/Layout/EditFormPanel";
@@ -178,16 +179,31 @@ function App() {
     return patch;
   }
 
-  function handleApplyCommon() {
+  function applyCommonCore(selectedOnly: boolean) {
     const patch = nonEmptyPatch();
-    if (Object.keys(patch).length === 0 || frames.length === 0) return;
+    if (Object.keys(patch).length === 0) return;
+
+    let targets: Set<string> | null = null;
+    let count = frames.length;
+    if (selectedOnly) {
+      const order = frames.filter((f) => selected.has(f.path));
+      if (order.length === 0) {
+        setApplyInfo("먼저 사진을 선택하세요");
+        return;
+      }
+      targets = new Set(order.map((f) => f.path));
+      count = order.length;
+    } else if (frames.length === 0) {
+      return;
+    }
+
     pushHistory();
     setFrames((prev) =>
-      prev.map((f) => ({
-        ...f,
-        pendingCommon: { ...f.pendingCommon, ...patch },
-        commonApplied: true,
-      }))
+      prev.map((f) =>
+        !targets || targets.has(f.path)
+          ? { ...f, pendingCommon: { ...f.pendingCommon, ...patch }, commonApplied: true }
+          : f
+      )
     );
     setHistory((prev) => {
       const next = { ...prev };
@@ -198,7 +214,17 @@ function App() {
       });
       return next;
     });
-    setApplyInfo(`${frames.length}장에 공통 정보 적용됨 · 저장 전이라 파일은 아직 안 바뀜`);
+    setApplyInfo(
+      selectedOnly
+        ? `선택 ${count}장에 공통 정보 적용됨 · 저장 전`
+        : `${count}장에 공통 정보 적용됨 · 저장 전이라 파일은 아직 안 바뀜`
+    );
+  }
+  function handleApplyCommon() {
+    applyCommonCore(false);
+  }
+  function handleApplyCommonSelected() {
+    applyCommonCore(true);
   }
 
   // 자동완성 후보: 과거 적용값 + 불러온 사진들의 기존 EXIF
@@ -399,6 +425,35 @@ function App() {
 
   function selectAll() {
     setSelected(new Set(frames.map((f) => f.path)));
+  }
+
+  // 불러온 사진 목록 초기화 (원본 파일은 그대로 — 앱 목록에서만 제거)
+  async function handleClearAll() {
+    if (frames.length === 0) return;
+    const yes = await confirm(
+      `불러온 ${frames.length}장을 목록에서 비웁니다.\n저장하지 않은 편집 내용은 사라집니다(원본 파일은 그대로). 계속할까요?`,
+      { title: "목록 비우기" }
+    );
+    if (!yes) return;
+    framesRef.current = [];
+    currentRef.current = null;
+    setFrames([]);
+    setSelected(new Set());
+    setCurrentPath(null);
+    setAnchor(null);
+    setDateInput("");
+    setGpsLat("");
+    setGpsLon("");
+    setApplyInfo(null);
+    setApplyDateInfo(null);
+    setSaveResult(null);
+    setBatchResult(null);
+    setTagError(null);
+    setUndoStack([]);
+    setRedoStack([]);
+    setListInfo(null);
+    setStatusNote("목록을 비웠습니다");
+    void saveSession({ frames: [], rollCommon, currentPath: null });
   }
 
   async function handlePickFiles() {
@@ -835,6 +890,7 @@ function App() {
           onPickFiles={handlePickFiles}
           onPickFolder={handlePickFolder}
           onSelectAll={selectAll}
+          onClearAll={handleClearAll}
           onImportCsv={handleImportCsv}
           onExportCsv={handleExportCsv}
           listInfo={listInfo}
@@ -855,6 +911,7 @@ function App() {
           onSavePreset={savePreset}
           onDeletePreset={deletePreset}
           onApplyCommon={handleApplyCommon}
+          onApplyCommonSelected={handleApplyCommonSelected}
           applyDisabled={applyDisabled}
           applyInfo={applyInfo}
           suggestions={suggestions}
